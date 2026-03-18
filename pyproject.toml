@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alert-hub"
+version = "0.1.0"
+description = "Small self-hosted personal alert hub"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115.0,<1.0.0",
+  "httpx>=0.27.0,<1.0.0",
+  "pydantic>=2.8.0,<3.0.0",
+  "PyYAML>=6.0.1,<7.0.0",
+  "uvicorn>=0.30.0,<1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0,<9.0.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["alert_hub*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

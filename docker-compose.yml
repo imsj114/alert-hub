@@ -1,0 +1,16 @@
+services:
+  alert-hub:
+    build: .
+    container_name: alert-hub
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      ALERT_HUB_CONFIG: /app/config/config.yaml
+      ALERT_HUB_ENV: /app/.env
+    volumes:
+      - ./config/config.yaml:/app/config/config.yaml:ro
+      - ./data:/app/data
+      - ./.env:/app/.env:ro

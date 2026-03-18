@@ -1,0 +1,45 @@
+server:
+  host: 0.0.0.0
+  port: 8000
+  database_path: ./data/alert_hub.db
+
+security:
+  timestamp_skew_seconds: 300
+  replay_window_seconds: 300
+
+dedupe:
+  window_seconds: 900
+
+worker:
+  poll_interval_seconds: 5
+  max_attempts: 6
+  base_backoff_seconds: 30
+  max_backoff_seconds: 3600
+
+senders:
+  - id: home-laptop
+    secret_env: ALERT_HUB_SENDER_HOME_LAPTOP_SECRET
+    allowed_cidrs:
+      - 192.168.1.0/24
+  - id: prod-monitor
+    secret_env: ALERT_HUB_SENDER_PROD_MONITOR_SECRET
+
+targets:
+  - id: personal-phone
+    type: ntfy
+    base_url: https://ntfy.sh
+    topic: your-topic
+    token_env: ALERT_HUB_NTFY_TOKEN
+    tags:
+      - alert-hub
+
+routes:
+  default:
+    targets:
+      - personal-phone
+  rules:
+    - match:
+        severities:
+          - critical
+      targets:
+        - personal-phone
