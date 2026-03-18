@@ -181,11 +181,11 @@ pytest
 
 ## Sending An Event
 
-Use the included helper script:
+Use the bash sender script for manual tests, cron jobs, CI, or wrapper scripts:
 
 ```bash
 export ALERT_HUB_SECRET="$ALERT_HUB_SENDER_HOME_LAPTOP_SECRET"
-python scripts/send_event.py \
+./scripts/send_event.sh \
   --url http://127.0.0.1:8000/api/v1/events \
   --sender home-laptop \
   --event-id manual-test-001 \
@@ -195,21 +195,23 @@ python scripts/send_event.py \
   --summary "Manual alert test"
 ```
 
-You can also send from a JSON file:
+For richer payloads, send a prebuilt JSON file:
 
 ```bash
-python scripts/send_event.py \
+./scripts/send_event.sh \
   --url http://127.0.0.1:8000/api/v1/events \
   --sender prod-monitor \
   --secret-env ALERT_HUB_SENDER_PROD_MONITOR_SECRET \
   --payload-file /path/to/event.json
 ```
 
-The helper script signs the raw JSON body and sends these headers:
+The shell script signs the raw JSON body and sends these headers:
 
 - `X-AlertHub-Sender`
 - `X-AlertHub-Timestamp`
 - `X-AlertHub-Signature`
+
+If you prefer Python, the original helper remains available at `scripts/send_event.py`.
 
 ## Deployment
 
