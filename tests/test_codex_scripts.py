@@ -391,6 +391,81 @@ def test_attention_watcher_sends_completion_event_for_default_mode(tmp_path: Pat
     assert sent["metadata"]["result_preview"] == "Default-mode completion."
 
 
+def test_attention_watcher_reads_newly_created_completed_session(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    sessions_dir = home / ".codex" / "sessions" / "2026" / "03" / "20"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+
+    state_file = tmp_path / "state-created-complete.json"
+    with RecordingServer() as server:
+        env_file = write_runtime_env(home, server.url)
+        assert (
+            run_script(
+                [
+                    "python3",
+                    str(SCRIPTS_DIR / "codex_attention_watcher.py"),
+                    "--env-file",
+                    str(env_file),
+                    "--sessions-dir",
+                    str(sessions_dir),
+                    "--state-file",
+                    str(state_file),
+                    "--once",
+                ],
+                home=home,
+            ).returncode
+            == 0
+        )
+
+        session_file = sessions_dir / "created-complete.jsonl"
+        session_file.write_text(
+            json.dumps({"type": "turn_context", "payload": {"cwd": "/tmp/new-file", "collaboration_mode": {"mode": "default"}}})
+            + "\n"
+            + json.dumps(
+                {
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "task_complete",
+                        "turn_id": "turn-created-complete-1",
+                        "last_agent_message": "Created already complete.",
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        if not state_file.exists():
+            state_file.write_text(
+                json.dumps({"version": 1, "offsets": {}, "cwd_by_file": {}, "mode_by_file": {}}),
+                encoding="utf-8",
+            )
+        cutoff = state_file.stat().st_mtime + 1
+        os.utime(session_file, (cutoff, cutoff))
+
+        result = run_script(
+            [
+                "python3",
+                str(SCRIPTS_DIR / "codex_attention_watcher.py"),
+                "--env-file",
+                str(env_file),
+                "--sessions-dir",
+                str(sessions_dir),
+                "--state-file",
+                str(state_file),
+                "--once",
+            ],
+            home=home,
+        )
+
+    assert result.returncode == 0
+    assert len(server.requests) == 1
+    sent = json.loads(server.requests[0]["body"].decode("utf-8"))
+    assert sent["event_type"] == "codex_job_completed"
+    assert sent["event_id"] == "codex-completed-turn-created-complete-1"
+    assert sent["metadata"]["turn_id"] == "turn-created-complete-1"
+    assert sent["metadata"]["result_preview"] == "Created already complete."
+
+
 def test_manager_install_writes_linux_unit_and_codex_config(tmp_path: Path) -> None:
     home = tmp_path / "home"
     config_file = home / ".codex" / "config.toml"

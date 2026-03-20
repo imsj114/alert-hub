@@ -81,17 +81,18 @@ def first_line(text: str, limit: int = 280) -> str:
 
 def read_state(state_file: Path) -> dict[str, Any]:
     if not state_file.exists():
-        return {"version": 1, "offsets": {}, "cwd_by_file": {}, "mode_by_file": {}}
+        return {"version": 1, "offsets": {}, "cwd_by_file": {}, "mode_by_file": {}, "last_scan_started_at": 0.0}
     try:
         raw = json.loads(state_file.read_text(encoding="utf-8"))
     except Exception:
-        return {"version": 1, "offsets": {}, "cwd_by_file": {}, "mode_by_file": {}}
+        return {"version": 1, "offsets": {}, "cwd_by_file": {}, "mode_by_file": {}, "last_scan_started_at": 0.0}
     if not isinstance(raw, dict):
-        return {"version": 1, "offsets": {}, "cwd_by_file": {}, "mode_by_file": {}}
+        return {"version": 1, "offsets": {}, "cwd_by_file": {}, "mode_by_file": {}, "last_scan_started_at": 0.0}
     raw.setdefault("version", 1)
     raw.setdefault("offsets", {})
     raw.setdefault("cwd_by_file", {})
     raw.setdefault("mode_by_file", {})
+    raw.setdefault("last_scan_started_at", 0.0)
     return raw
 
 
@@ -290,7 +291,22 @@ def emit_event(*, config, payload: dict[str, Any], dry_run: bool, verbose: bool,
         print(f"[{now_utc()}] send failed: {exc}", file=sys.stderr, flush=True)
 
 
-def process_file(file_path: Path, state: dict[str, Any], *, config, dry_run: bool, verbose: bool) -> bool:
+def should_process_new_file(file_path: Path, discovery_cutoff_unix_time: float) -> bool:
+    try:
+        return file_path.stat().st_mtime >= discovery_cutoff_unix_time
+    except OSError:
+        return False
+
+
+def process_file(
+    file_path: Path,
+    state: dict[str, Any],
+    *,
+    config,
+    dry_run: bool,
+    verbose: bool,
+    discovery_cutoff_unix_time: float,
+) -> bool:
     offsets: dict[str, int] = state["offsets"]
     cwd_by_file: dict[str, str] = state["cwd_by_file"]
     mode_by_file: dict[str, str] = state["mode_by_file"]
@@ -299,7 +315,7 @@ def process_file(file_path: Path, state: dict[str, Any], *, config, dry_run: boo
     changed = False
 
     if key not in offsets:
-        offsets[key] = size
+        offsets[key] = 0 if should_process_new_file(file_path, discovery_cutoff_unix_time) else size
         cwd = sniff_latest_cwd(file_path)
         mode = sniff_latest_mode(file_path)
         if cwd:
@@ -307,8 +323,9 @@ def process_file(file_path: Path, state: dict[str, Any], *, config, dry_run: boo
         if mode:
             mode_by_file[key] = mode
         if verbose:
-            print(f"[{now_utc()}] init offset {file_path} -> {size}", flush=True)
-        return True
+            print(f"[{now_utc()}] init offset {file_path} -> {offsets[key]}", flush=True)
+        if offsets[key] == size:
+            return True
 
     offset = int(offsets.get(key, 0))
     if size < offset:
@@ -465,8 +482,11 @@ def main() -> int:
     poll_seconds = args.poll_seconds if args.poll_seconds is not None else config.poll_seconds
     state = read_state(state_file)
     sessions_dir = Path(args.sessions_dir).expanduser()
+    startup_unix_time = time.time()
 
     while True:
+        discovery_cutoff_unix_time = float(state.get("last_scan_started_at") or startup_unix_time)
+        current_scan_started_at = time.time()
         changed = prune_missing_files(state)
         for file_path in latest_session_files(sessions_dir, args.recent_files):
             changed = process_file(
@@ -475,7 +495,11 @@ def main() -> int:
                 config=config,
                 dry_run=args.dry_run,
                 verbose=args.verbose,
+                discovery_cutoff_unix_time=discovery_cutoff_unix_time,
             ) or changed
+        if state.get("last_scan_started_at") != current_scan_started_at:
+            state["last_scan_started_at"] = current_scan_started_at
+            changed = True
         if changed:
             write_state(state_file, state)
         if args.once:
