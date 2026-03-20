@@ -428,4 +428,6 @@ def test_mcp_server_accepts_newline_delimited_initialize(tmp_path: Path) -> None
         )
 
     assert result.returncode == 0
-    assert '"serverInfo":{"name":"alert_hub","version":"0.1.0"}' in result.stdout
+    parsed = json.loads(result.stdout.strip())
+    assert parsed["result"]["serverInfo"]["name"] == "alert_hub"
+    assert parsed["result"]["serverInfo"]["version"] == "0.1.0"

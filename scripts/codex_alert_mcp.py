@@ -13,6 +13,7 @@ from codex_alert_common import load_runtime_config, send_payload
 SERVER_NAME = "alert_hub"
 SERVER_VERSION = "0.1.0"
 MANUAL_STATUS_TAG = "codex-status-manual"
+OUTPUT_MODE = "content-length"
 
 
 class JsonRpcError(Exception):
@@ -29,6 +30,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def read_message() -> dict[str, Any] | None:
+    global OUTPUT_MODE
     first_line = sys.stdin.buffer.readline()
     if not first_line:
         return None
@@ -38,9 +40,11 @@ def read_message() -> dict[str, Any] | None:
         return None
 
     if stripped.startswith(b"{"):
+        OUTPUT_MODE = "line"
         return json.loads(stripped.decode("utf-8"))
 
     headers: dict[str, str] = {}
+    OUTPUT_MODE = "content-length"
     decoded = first_line.decode("utf-8").strip()
     if ":" in decoded:
         key, value = decoded.split(":", 1)
@@ -67,8 +71,11 @@ def read_message() -> dict[str, Any] | None:
 
 def write_message(payload: dict[str, Any]) -> None:
     raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    sys.stdout.buffer.write(f"Content-Length: {len(raw)}\r\n\r\n".encode("utf-8"))
-    sys.stdout.buffer.write(raw)
+    if OUTPUT_MODE == "line":
+        sys.stdout.buffer.write(raw + b"\n")
+    else:
+        sys.stdout.buffer.write(f"Content-Length: {len(raw)}\r\n\r\n".encode("utf-8"))
+        sys.stdout.buffer.write(raw)
     sys.stdout.buffer.flush()
 
 
