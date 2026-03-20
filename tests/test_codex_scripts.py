@@ -123,6 +123,52 @@ def test_codex_notify_sends_completion_event(tmp_path: Path) -> None:
     assert sent["metadata"]["thread_id"] == "main-thread"
 
 
+def test_codex_notify_sends_task_complete_event(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    with RecordingServer() as server:
+        write_runtime_env(home, server.url)
+        payload = {
+            "type": "task_complete",
+            "cwd": "/tmp/project",
+            "thread-id": "main-thread",
+            "last_agent_message": "Patched the notifier.",
+        }
+
+        result = run_script(["bash", str(SCRIPTS_DIR / "codex_notify.sh"), json.dumps(payload)], home=home)
+
+    assert result.returncode == 0
+    assert len(server.requests) == 1
+    sent = json.loads(server.requests[0]["body"].decode("utf-8"))
+    assert sent["event_type"] == "codex_job_completed"
+    assert sent["metadata"]["thread_id"] == "main-thread"
+    assert sent["metadata"]["result_preview"] == "Patched the notifier."
+
+
+def test_codex_notify_sends_wrapped_task_complete_event(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    with RecordingServer() as server:
+        write_runtime_env(home, server.url)
+        payload = {
+            "type": "event_msg",
+            "cwd": "/tmp/project",
+            "thread-id": "main-thread",
+            "payload": {
+                "type": "task_complete",
+                "turn_id": "turn-123",
+                "last_agent_message": "Wrapped completion event.",
+            },
+        }
+
+        result = run_script(["bash", str(SCRIPTS_DIR / "codex_notify.sh"), json.dumps(payload)], home=home)
+
+    assert result.returncode == 0
+    assert len(server.requests) == 1
+    sent = json.loads(server.requests[0]["body"].decode("utf-8"))
+    assert sent["event_type"] == "codex_job_completed"
+    assert sent["metadata"]["thread_id"] == "main-thread"
+    assert sent["metadata"]["result_preview"] == "Wrapped completion event."
+
+
 def test_codex_notify_ignores_subagent_thread(tmp_path: Path) -> None:
     home = tmp_path / "home"
     sessions_dir = home / ".codex" / "sessions" / "2026" / "03" / "20"

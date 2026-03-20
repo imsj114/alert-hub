@@ -19,6 +19,15 @@ from codex_alert_common import (
 
 EVENT_TYPE = "codex_job_completed"
 STATUS_TAG = "codex-status-completed"
+COMPLETION_TYPES = {
+    "agent-turn-complete",
+    "agent_turn_complete",
+    "assistant-turn-complete",
+    "assistant_turn_complete",
+    "task_complete",
+    "turn-complete",
+    "turn_complete",
+}
 
 
 def prompt_from_payload(payload: dict[str, Any]) -> str:
@@ -29,12 +38,31 @@ def prompt_from_payload(payload: dict[str, Any]) -> str:
     return first_line(latest) if isinstance(latest, str) else ""
 
 
+def completion_payload(raw: dict[str, Any]) -> dict[str, Any]:
+    payload_type = str(raw.get("type", "")).strip()
+    if payload_type in COMPLETION_TYPES:
+        return raw
+
+    nested = raw.get("payload")
+    if payload_type == "event_msg" and isinstance(nested, dict):
+        nested_type = str(nested.get("type", "")).strip()
+        if nested_type in COMPLETION_TYPES:
+            merged = dict(raw)
+            merged.update(nested)
+            merged["type"] = nested_type
+            return merged
+
+    return {}
+
+
 def build_payload(config, payload: dict[str, Any]) -> dict[str, Any]:
     thread_id = extract_thread_id(payload)
     prompt = prompt_from_payload(payload)
+    result_preview = first_line(str(payload.get("last_agent_message", "")).strip())
     cwd = str(payload.get("cwd", "")).strip()
     body = build_body(
         f"prompt: {prompt}" if prompt else "",
+        f"result: {result_preview}" if result_preview else "",
         f"cwd: {cwd}" if cwd else "",
     )
     metadata = {
@@ -43,6 +71,7 @@ def build_payload(config, payload: dict[str, Any]) -> dict[str, Any]:
         "thread_id": thread_id,
         "cwd": cwd,
         "prompt": prompt,
+        "result_preview": result_preview,
     }
     return {
         "event_id": stable_event_id("codex-completed", canonical_json(payload)),
@@ -61,8 +90,8 @@ def main(argv: list[str] | None = None) -> int:
     if not args:
         return 0
 
-    payload = load_json_argument(args[0])
-    if payload.get("type") != "agent-turn-complete":
+    payload = completion_payload(load_json_argument(args[0]))
+    if not payload:
         return 0
 
     thread_id = extract_thread_id(payload)
