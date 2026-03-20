@@ -101,7 +101,7 @@ def run_script(command: list[str], *, home: Path, extra_env: dict[str, str] | No
     )
 
 
-def test_codex_notify_sends_completion_event(tmp_path: Path) -> None:
+def test_codex_notify_ignores_legacy_completion_event(tmp_path: Path) -> None:
     home = tmp_path / "home"
     with RecordingServer() as server:
         write_runtime_env(home, server.url)
@@ -115,12 +115,7 @@ def test_codex_notify_sends_completion_event(tmp_path: Path) -> None:
         result = run_script(["bash", str(SCRIPTS_DIR / "codex_notify.sh"), json.dumps(payload)], home=home)
 
     assert result.returncode == 0
-    assert len(server.requests) == 1
-    sent = json.loads(server.requests[0]["body"].decode("utf-8"))
-    assert sent["event_type"] == "codex_job_completed"
-    assert sent["summary"] == "Codex task completed"
-    assert sent["tags"] == ["codex-status-completed"]
-    assert sent["metadata"]["thread_id"] == "main-thread"
+    assert server.requests == []
 
 
 def test_codex_notify_sends_task_complete_event(tmp_path: Path) -> None:
@@ -142,6 +137,7 @@ def test_codex_notify_sends_task_complete_event(tmp_path: Path) -> None:
     sent = json.loads(server.requests[0]["body"].decode("utf-8"))
     assert sent["event_type"] == "codex_job_completed"
     assert sent["event_id"] == "codex-completed-turn-456"
+    assert sent["dedupe_key"] == sent["event_id"]
     assert sent["metadata"]["turn_id"] == "turn-456"
     assert sent["metadata"]["result_preview"] == "Patched the notifier."
 
@@ -168,6 +164,7 @@ def test_codex_notify_sends_wrapped_task_complete_event(tmp_path: Path) -> None:
     sent = json.loads(server.requests[0]["body"].decode("utf-8"))
     assert sent["event_type"] == "codex_job_completed"
     assert sent["event_id"] == "codex-completed-turn-123"
+    assert sent["dedupe_key"] == sent["event_id"]
     assert sent["metadata"]["turn_id"] == "turn-123"
     assert sent["metadata"]["result_preview"] == "Wrapped completion event."
 
@@ -265,6 +262,7 @@ def test_attention_watcher_sends_approval_event_once(tmp_path: Path) -> None:
     sent = json.loads(server.requests[0]["body"].decode("utf-8"))
     assert sent["event_type"] == "codex_approval_needed"
     assert sent["tags"] == ["codex-status-approval-needed"]
+    assert sent["dedupe_key"] == sent["event_id"]
 
 
 def test_attention_watcher_sends_plan_ready_event(tmp_path: Path) -> None:
@@ -320,6 +318,7 @@ def test_attention_watcher_sends_plan_ready_event(tmp_path: Path) -> None:
     sent = json.loads(server.requests[0]["body"].decode("utf-8"))
     assert sent["event_type"] == "codex_plan_ready"
     assert sent["tags"] == ["codex-status-plan-ready"]
+    assert sent["dedupe_key"] == sent["event_id"]
 
 
 def test_attention_watcher_sends_completion_event_for_default_mode(tmp_path: Path) -> None:
@@ -387,6 +386,7 @@ def test_attention_watcher_sends_completion_event_for_default_mode(tmp_path: Pat
     sent = json.loads(server.requests[0]["body"].decode("utf-8"))
     assert sent["event_type"] == "codex_job_completed"
     assert sent["event_id"] == "codex-completed-turn-complete-1"
+    assert sent["dedupe_key"] == sent["event_id"]
     assert sent["metadata"]["turn_id"] == "turn-complete-1"
     assert sent["metadata"]["result_preview"] == "Default-mode completion."
 
@@ -462,6 +462,7 @@ def test_attention_watcher_reads_newly_created_completed_session(tmp_path: Path)
     sent = json.loads(server.requests[0]["body"].decode("utf-8"))
     assert sent["event_type"] == "codex_job_completed"
     assert sent["event_id"] == "codex-completed-turn-created-complete-1"
+    assert sent["dedupe_key"] == sent["event_id"]
     assert sent["metadata"]["turn_id"] == "turn-created-complete-1"
     assert sent["metadata"]["result_preview"] == "Created already complete."
 

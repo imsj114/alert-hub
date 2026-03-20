@@ -183,6 +183,7 @@ def completion_event_id(payload: dict[str, Any]) -> str:
 
 
 def build_completion_event(config: RuntimeConfig, payload: dict[str, Any]) -> dict[str, Any]:
+    event_id = completion_event_id(payload)
     turn_id = str(payload.get("turn_id", "")).strip()
     thread_id = extract_thread_id(payload)
     prompt = prompt_from_completion_payload(payload)
@@ -204,12 +205,13 @@ def build_completion_event(config: RuntimeConfig, payload: dict[str, Any]) -> di
         metadata["thread_id"] = thread_id
         metadata["prompt"] = prompt
     return {
-        "event_id": completion_event_id(payload),
+        "event_id": event_id,
         "source": config.source,
         "event_type": COMPLETION_EVENT_TYPE,
         "severity": "info",
         "summary": "Codex task completed",
         "body": body,
+        "dedupe_key": event_id,
         "metadata": {key: value for key, value in metadata.items() if value not in ("", None)},
         "tags": [COMPLETION_STATUS_TAG],
     }

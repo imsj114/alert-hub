@@ -252,6 +252,10 @@ def build_status_payload(
     event_name: str,
 ) -> dict[str, Any]:
     event = EVENT_CONFIG[key]
+    event_id = stable_event_id(
+        event["event_type"],
+        f"{file_path}|{offset}|{event_name}|{detail}|{cwd}",
+    )
     metadata = {
         "codex_status": event["status"],
         "codex_event_type": event_name,
@@ -262,15 +266,13 @@ def build_status_payload(
     if detail:
         metadata["detail"] = detail
     return {
-        "event_id": stable_event_id(
-            event["event_type"],
-            f"{file_path}|{offset}|{event_name}|{detail}|{cwd}",
-        ),
+        "event_id": event_id,
         "source": config.source,
         "event_type": event["event_type"],
         "severity": event["severity"],
         "summary": event["summary"],
         "body": build_body(f"detail: {detail}" if detail else "", f"cwd: {cwd}" if cwd else ""),
+        "dedupe_key": event_id,
         "metadata": metadata,
         "tags": [event["tag"]],
     }

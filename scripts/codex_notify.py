@@ -15,24 +15,31 @@ from codex_alert_common import (
 )
 
 COMPLETION_TYPES = {
-    "agent-turn-complete",
-    "agent_turn_complete",
-    "assistant-turn-complete",
-    "assistant_turn_complete",
     "task_complete",
     "turn-complete",
     "turn_complete",
 }
 
+LEGACY_COMPLETION_TYPES = {
+    "agent-turn-complete",
+    "agent_turn_complete",
+    "assistant-turn-complete",
+    "assistant_turn_complete",
+}
+
 
 def completion_payload(raw: dict[str, Any]) -> dict[str, Any]:
     payload_type = str(raw.get("type", "")).strip()
+    if payload_type in LEGACY_COMPLETION_TYPES:
+        return {}
     if payload_type in COMPLETION_TYPES:
         return raw
 
     nested = raw.get("payload")
     if payload_type == "event_msg" and isinstance(nested, dict):
         nested_type = str(nested.get("type", "")).strip()
+        if nested_type in LEGACY_COMPLETION_TYPES:
+            return {}
         if nested_type in COMPLETION_TYPES:
             merged = dict(raw)
             merged.update(nested)
