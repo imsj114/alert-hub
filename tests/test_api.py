@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import ipaddress
+import sqlite3
 import time
 from pathlib import Path
 
@@ -106,6 +108,23 @@ def test_critical_events_route_to_critical_target(app_client) -> None:
     assert response.json()["targets"] == ["critical-phone"]
 
 
+def test_ingest_accepts_event_tags(app_client) -> None:
+    client, _ = app_client
+    headers, raw_body = signed_request(
+        sample_payload(event_id="evt-tags", tags=["codex-status-completed", "codex"])
+    )
+
+    response = client.post("/api/v1/events", content=raw_body, headers=headers)
+
+    assert response.status_code == 202
+    database_path = client.app.state.service.config.server.database_path
+    with sqlite3.connect(database_path) as conn:
+        conn.row_factory = sqlite3.Row
+        stored = conn.execute("SELECT tags_json FROM events WHERE event_id = ?", ("evt-tags",)).fetchone()
+    assert stored is not None
+    assert stored["tags_json"] == '["codex-status-completed","codex"]'
+
+
 def test_sender_allowlist_is_enforced(tmp_path: Path) -> None:
     config = build_config(tmp_path, allowed_networks=(ipaddress.ip_network("10.0.0.0/24"),))
     service = AlertHubService(config)
@@ -130,3 +149,44 @@ def test_invalid_content_type_returns_415(app_client) -> None:
     headers["Content-Type"] = "text/plain"
     response = client.post("/api/v1/events", content=raw_body, headers=headers)
     assert response.status_code == 415
+
+
+def test_initialize_adds_tags_column_to_existing_database(tmp_path: Path) -> None:
+    database_path = tmp_path / "legacy.db"
+    with sqlite3.connect(database_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender_id TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                source TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                body TEXT,
+                occurred_at TEXT NOT NULL,
+                received_at TEXT NOT NULL,
+                dedupe_key TEXT,
+                effective_dedupe_key TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                payload_hash TEXT NOT NULL,
+                metadata_json TEXT NOT NULL,
+                links_json TEXT NOT NULL,
+                status TEXT NOT NULL,
+                suppressed_by_event_id INTEGER,
+                created_at TEXT NOT NULL,
+                UNIQUE(sender_id, event_id)
+            );
+            """
+        )
+
+    config = build_config(tmp_path)
+    config = replace(config, server=replace(config.server, database_path=str(database_path)))
+    service = AlertHubService(config)
+    service.initialize()
+
+    with sqlite3.connect(database_path) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()}
+
+    assert "tags_json" in columns

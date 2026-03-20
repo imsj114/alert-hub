@@ -24,7 +24,7 @@ class NtfyNotifier:
         headers = {
             "Title": f"[{job.severity.value.upper()}] {job.summary}",
             "Priority": PRIORITY_MAP[job.severity],
-            "Tags": ",".join(dict.fromkeys((*target.tags, job.severity.value))),
+            "Tags": ",".join(dict.fromkeys((*target.tags, *job.tags, job.severity.value))),
         }
         if job.links:
             first_link = job.links[0].get("url")

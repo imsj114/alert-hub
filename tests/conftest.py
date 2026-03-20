@@ -89,7 +89,13 @@ def signed_request(payload: dict, *, sender_id: str = "home-laptop", secret: str
     return headers, raw_body
 
 
-def sample_payload(*, event_id: str = "evt-1", severity: str = "warning", summary: str = "Disk usage high") -> dict:
+def sample_payload(
+    *,
+    event_id: str = "evt-1",
+    severity: str = "warning",
+    summary: str = "Disk usage high",
+    tags: list[str] | None = None,
+) -> dict:
     return {
         "event_id": event_id,
         "source": "prod-db-01",
@@ -99,6 +105,7 @@ def sample_payload(*, event_id: str = "evt-1", severity: str = "warning", summar
         "body": "Root filesystem is above threshold",
         "links": [{"url": "https://internal.example/host/prod-db-01", "label": "Host"}],
         "metadata": {"usage_percent": 88},
+        "tags": tags or [],
     }
 
 

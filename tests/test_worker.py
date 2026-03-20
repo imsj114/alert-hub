@@ -100,3 +100,32 @@ def test_worker_marks_non_retryable_failures_dead(tmp_path: Path) -> None:
     assert row["status"] == "dead"
     assert row["attempts"] == 1
     assert "400" in row["last_error"]
+
+
+def test_worker_includes_event_tags_in_ntfy_headers(tmp_path: Path) -> None:
+    recorded = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, text="ok")
+
+    app = create_app(
+        build_config(tmp_path),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        enable_worker=False,
+    )
+
+    with TestClient(app) as client:
+        headers, raw_body = signed_request(
+            sample_payload(event_id="evt-tagged-worker", tags=["codex-status-completed", "codex"])
+        )
+        ingest = client.post("/api/v1/events", content=raw_body, headers=headers)
+        assert ingest.status_code == 202
+
+        client.app.state.service.process_due_deliveries_once(now=utc_now())
+
+    tags = recorded[0].headers["Tags"].split(",")
+    assert "alert-hub" in tags
+    assert "codex-status-completed" in tags
+    assert "codex" in tags
+    assert "warning" in tags

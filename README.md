@@ -70,7 +70,8 @@ JSON body:
   "metadata": {
     "filesystem": "/",
     "usage_percent": 88
-  }
+  },
+  "tags": ["disk-space", "prod"]
 }
 ```
 
@@ -89,6 +90,7 @@ Optional fields:
 - `dedupe_key`
 - `links`
 - `metadata`
+- `tags`
 
 ## Deduplication And Retries
 
@@ -212,6 +214,58 @@ The shell script signs the raw JSON body and sends these headers:
 - `X-AlertHub-Signature`
 
 If you prefer Python, the original helper remains available at `scripts/send_event.py`.
+
+## Codex Alerting
+
+This repo includes a portable Codex sender stack for Linux and macOS:
+
+- `scripts/codex_notify.sh`: completion hook wired through Codex `notify`
+- `scripts/codex_attention_watcher.py`: watches `~/.codex/sessions` for approval/input/plan-ready states
+- `scripts/codex_attention_watcher.sh`: installer and service manager
+- `scripts/codex_alert_mcp.py`: local MCP server with a `send_alert` tool for manual Codex-triggered alerts
+
+Install it on a machine that runs Codex:
+
+```bash
+./scripts/codex_attention_watcher.sh install \
+  --url http://127.0.0.1:8000/api/v1/events \
+  --sender home-laptop \
+  --source codex-home-laptop \
+  --secret-env ALERT_HUB_SENDER_HOME_LAPTOP_SECRET
+```
+
+What `install` does:
+
+- writes runtime settings to `~/.codex/codex_alert_hub.env`
+- replaces the top-level `notify = [...]` entry in `~/.codex/config.toml` so Codex runs `scripts/codex_notify.sh`
+- adds `[mcp_servers.alert_hub]` in `~/.codex/config.toml` for the local MCP server
+- installs a background watcher as a `systemd --user` service on Linux or a `launchd` agent on macOS
+
+Manage the watcher service:
+
+```bash
+./scripts/codex_attention_watcher.sh status
+./scripts/codex_attention_watcher.sh logs 80
+./scripts/codex_attention_watcher.sh restart
+./scripts/codex_attention_watcher.sh uninstall
+```
+
+Automatic Codex events sent through Alert Hub:
+
+- `codex_job_completed`
+- `codex_approval_needed`
+- `codex_input_needed`
+- `codex_plan_ready`
+
+Each Codex event includes one status tag so `ntfy` can surface the current state cleanly:
+
+- `codex-status-completed`
+- `codex-status-approval-needed`
+- `codex-status-input-needed`
+- `codex-status-plan-ready`
+- `codex-status-manual`
+
+The MCP server adds a separate manual path. Once installed, Codex can call the `send_alert` tool to send a signed Alert Hub event directly without waiting for the automatic watcher or completion hook.
 
 ## Deployment
 

@@ -84,6 +84,12 @@ class Database:
                     ON seen_signatures(seen_at);
                 """
             )
+            self._migrate_additive_columns(conn)
+
+    def _migrate_additive_columns(self, conn: sqlite3.Connection) -> None:
+        event_columns = {row["name"] for row in conn.execute("PRAGMA table_info(events)").fetchall()}
+        if "tags_json" not in event_columns:
+            conn.execute("ALTER TABLE events ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'")
 
     def ping(self) -> None:
         with self._connect() as conn:
@@ -167,10 +173,11 @@ class Database:
                         payload_hash,
                         metadata_json,
                         links_json,
+                        tags_json,
                         status,
                         suppressed_by_event_id,
                         created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         event.sender_id,
@@ -188,6 +195,7 @@ class Database:
                         event.payload_hash,
                         event.metadata_json,
                         event.links_json,
+                        event.tags_json,
                         status,
                         suppressed_by["id"] if suppressed_by else None,
                         format_utc(event.received_at),
@@ -247,7 +255,8 @@ class Database:
                     e.severity,
                     e.summary,
                     e.body,
-                    e.links_json
+                    e.links_json,
+                    e.tags_json
                 FROM deliveries d
                 JOIN events e ON e.id = d.event_db_id
                 WHERE d.status = 'pending' AND d.next_attempt_at <= ?
@@ -260,6 +269,7 @@ class Database:
         jobs = []
         for row in rows:
             links = json.loads(row["links_json"])
+            tags = tuple(dict.fromkeys(json.loads(row["tags_json"])))
             jobs.append(
                 DeliveryJob(
                     delivery_id=row["delivery_id"],
@@ -274,6 +284,7 @@ class Database:
                     summary=row["summary"],
                     body=row["body"],
                     links=tuple(links),
+                    tags=tags,
                 )
             )
         return jobs

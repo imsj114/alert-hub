@@ -14,8 +14,6 @@ from alert_hub.time_utils import format_utc, parse_rfc3339
 ShortText = StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
 MediumText = StringConstraints(strip_whitespace=True, min_length=1, max_length=500)
 LongText = StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)
-
-
 class Severity(str, Enum):
     INFO = "info"
     WARNING = "warning"
@@ -47,6 +45,7 @@ class IncomingEvent(BaseModel):
     dedupe_key: str | None = Field(default=None, min_length=1, max_length=200)
     links: list[EventLink] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
 
     @field_validator("event_id", "source", "event_type", "summary", "body", "dedupe_key")
     @classmethod
@@ -78,10 +77,24 @@ class IncomingEvent(BaseModel):
             raise ValueError("metadata must be an object")
         return value
 
+    @field_validator("tags")
+    @classmethod
+    def normalize_tags(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for tag in value:
+            stripped = str(tag).strip()
+            if not stripped:
+                raise ValueError("tags must not contain blank values")
+            if len(stripped) > 100:
+                raise ValueError("tags must be at most 100 characters")
+            normalized.append(stripped)
+        return normalized
+
     def canonical_payload(self) -> dict[str, Any]:
         payload = self.model_dump(mode="json")
         payload.setdefault("links", [])
         payload.setdefault("metadata", {})
+        payload.setdefault("tags", [])
         return payload
 
 
@@ -126,6 +139,10 @@ class PreparedEvent:
     @property
     def metadata_json(self) -> str:
         return json.dumps(self.payload.metadata, sort_keys=True, separators=(",", ":"))
+
+    @property
+    def tags_json(self) -> str:
+        return json.dumps(list(dict.fromkeys(self.payload.tags)), separators=(",", ":"))
 
     @classmethod
     def from_incoming(cls, sender_id: str, payload: IncomingEvent, received_at: datetime) -> "PreparedEvent":
@@ -185,6 +202,7 @@ class DeliveryJob:
     summary: str
     body: str | None
     links: tuple[dict[str, str | None], ...]
+    tags: tuple[str, ...]
 
 
 class DeliveryState(str, Enum):
