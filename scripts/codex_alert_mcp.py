@@ -174,15 +174,21 @@ def validate_tool_args(args: Any) -> dict[str, Any]:
 
 def send_alert(config, args: dict[str, Any]) -> dict[str, Any]:
     payload = validate_tool_args(args)
-    payload.update(
-        {
-            "event_id": f"codex-manual-{int(time.time())}-{uuid.uuid4().hex[:12]}",
-            "source": config.source,
-        }
-    )
-    response = send_payload(config, payload)
+    event_payload = {
+        "event_id": f"codex-manual-{int(time.time())}-{uuid.uuid4().hex[:12]}",
+        "source": config.source,
+        "event_type": payload["event_type"],
+        "severity": payload["severity"],
+        "summary": payload["summary"],
+        "metadata": payload["metadata"],
+        "tags": payload["tags"],
+        "links": payload["links"],
+    }
+    if payload["body"]:
+        event_payload["body"] = payload["body"]
+    response = send_payload(config, event_payload)
     return {
-        "event_id": payload["event_id"],
+        "event_id": event_payload["event_id"],
         "sender_id": config.sender,
         "status_code": response.get("status_code"),
         "response": response,

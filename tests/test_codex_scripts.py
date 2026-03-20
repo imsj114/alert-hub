@@ -406,6 +406,7 @@ def test_mcp_server_sends_manual_alert(tmp_path: Path) -> None:
     assert sent["event_type"] == "codex_manual_alert"
     assert "codex-status-manual" in sent["tags"]
     assert "custom-tag" in sent["tags"]
+    assert "body" not in sent
 
 
 def test_mcp_server_accepts_newline_delimited_initialize(tmp_path: Path) -> None:
