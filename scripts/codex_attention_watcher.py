@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from codex_alert_common import build_body, load_runtime_config, send_payload, stable_event_id
+from codex_alert_common import build_body, build_completion_event, load_runtime_config, send_payload, stable_event_id
 
 APPROVAL_EVENTS = {
     "approval_request",
@@ -357,22 +357,36 @@ def process_file(file_path: Path, state: dict[str, Any], *, config, dry_run: boo
                 continue
 
             payload = record.get("payload")
-            if isinstance(payload, dict) and payload.get("type") == "task_complete" and mode_by_file.get(key) == "plan":
-                event_payload = build_status_payload(
-                    config=config,
-                    key="plan_ready",
-                    detail="Implement this plan?",
-                    cwd=cwd_by_file.get(key, ""),
-                    file_path=file_path,
-                    offset=current_offset,
-                    event_name="plan_mode.task_complete",
-                )
+            if isinstance(payload, dict) and payload.get("type") == "task_complete":
+                if mode_by_file.get(key) == "plan":
+                    event_payload = build_status_payload(
+                        config=config,
+                        key="plan_ready",
+                        detail="Implement this plan?",
+                        cwd=cwd_by_file.get(key, ""),
+                        file_path=file_path,
+                        offset=current_offset,
+                        event_name="plan_mode.task_complete",
+                    )
+                    emit_event(
+                        config=config,
+                        payload=event_payload,
+                        dry_run=dry_run,
+                        verbose=verbose,
+                        event_name="plan_mode.task_complete",
+                        file_path=file_path,
+                    )
+                    continue
+
+                completion_payload = dict(payload)
+                completion_payload.setdefault("cwd", cwd_by_file.get(key, ""))
+                event_payload = build_completion_event(config, completion_payload)
                 emit_event(
                     config=config,
                     payload=event_payload,
                     dry_run=dry_run,
                     verbose=verbose,
-                    event_name="plan_mode.task_complete",
+                    event_name="task_complete",
                     file_path=file_path,
                 )
                 continue

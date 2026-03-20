@@ -129,6 +129,7 @@ def test_codex_notify_sends_task_complete_event(tmp_path: Path) -> None:
         write_runtime_env(home, server.url)
         payload = {
             "type": "task_complete",
+            "turn_id": "turn-456",
             "cwd": "/tmp/project",
             "thread-id": "main-thread",
             "last_agent_message": "Patched the notifier.",
@@ -140,7 +141,8 @@ def test_codex_notify_sends_task_complete_event(tmp_path: Path) -> None:
     assert len(server.requests) == 1
     sent = json.loads(server.requests[0]["body"].decode("utf-8"))
     assert sent["event_type"] == "codex_job_completed"
-    assert sent["metadata"]["thread_id"] == "main-thread"
+    assert sent["event_id"] == "codex-completed-turn-456"
+    assert sent["metadata"]["turn_id"] == "turn-456"
     assert sent["metadata"]["result_preview"] == "Patched the notifier."
 
 
@@ -165,7 +167,8 @@ def test_codex_notify_sends_wrapped_task_complete_event(tmp_path: Path) -> None:
     assert len(server.requests) == 1
     sent = json.loads(server.requests[0]["body"].decode("utf-8"))
     assert sent["event_type"] == "codex_job_completed"
-    assert sent["metadata"]["thread_id"] == "main-thread"
+    assert sent["event_id"] == "codex-completed-turn-123"
+    assert sent["metadata"]["turn_id"] == "turn-123"
     assert sent["metadata"]["result_preview"] == "Wrapped completion event."
 
 
@@ -317,6 +320,75 @@ def test_attention_watcher_sends_plan_ready_event(tmp_path: Path) -> None:
     sent = json.loads(server.requests[0]["body"].decode("utf-8"))
     assert sent["event_type"] == "codex_plan_ready"
     assert sent["tags"] == ["codex-status-plan-ready"]
+
+
+def test_attention_watcher_sends_completion_event_for_default_mode(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    sessions_dir = home / ".codex" / "sessions" / "2026" / "03" / "20"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    session_file = sessions_dir / "complete.jsonl"
+    session_file.write_text(
+        json.dumps({"type": "turn_context", "payload": {"cwd": "/tmp/default", "collaboration_mode": {"mode": "default"}}})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    state_file = tmp_path / "state-complete.json"
+    with RecordingServer() as server:
+        env_file = write_runtime_env(home, server.url)
+        assert (
+            run_script(
+                [
+                    "python3",
+                    str(SCRIPTS_DIR / "codex_attention_watcher.py"),
+                    "--env-file",
+                    str(env_file),
+                    "--sessions-dir",
+                    str(sessions_dir),
+                    "--state-file",
+                    str(state_file),
+                    "--once",
+                ],
+                home=home,
+            ).returncode
+            == 0
+        )
+        with session_file.open("a", encoding="utf-8") as handle:
+            handle.write(
+                json.dumps(
+                    {
+                        "type": "event_msg",
+                        "payload": {
+                            "type": "task_complete",
+                            "turn_id": "turn-complete-1",
+                            "last_agent_message": "Default-mode completion.",
+                        },
+                    }
+                )
+                + "\n"
+            )
+        result = run_script(
+            [
+                "python3",
+                str(SCRIPTS_DIR / "codex_attention_watcher.py"),
+                "--env-file",
+                str(env_file),
+                "--sessions-dir",
+                str(sessions_dir),
+                "--state-file",
+                str(state_file),
+                "--once",
+            ],
+            home=home,
+        )
+
+    assert result.returncode == 0
+    assert len(server.requests) == 1
+    sent = json.loads(server.requests[0]["body"].decode("utf-8"))
+    assert sent["event_type"] == "codex_job_completed"
+    assert sent["event_id"] == "codex-completed-turn-complete-1"
+    assert sent["metadata"]["turn_id"] == "turn-complete-1"
+    assert sent["metadata"]["result_preview"] == "Default-mode completion."
 
 
 def test_manager_install_writes_linux_unit_and_codex_config(tmp_path: Path) -> None:

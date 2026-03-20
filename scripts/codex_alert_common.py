@@ -15,6 +15,8 @@ from typing import Any
 ENV_FILE_NAME = "codex_alert_hub.env"
 DEFAULT_STATE_FILE = "~/.codex/tmp/codex_attention_watcher_state.json"
 DEFAULT_LOG_FILE = "~/.codex/log/codex_attention_watcher.log"
+COMPLETION_EVENT_TYPE = "codex_job_completed"
+COMPLETION_STATUS_TAG = "codex-status-completed"
 
 
 @dataclass(frozen=True)
@@ -163,6 +165,54 @@ def load_json_argument(raw: str) -> dict[str, Any]:
 
 def canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def prompt_from_completion_payload(payload: dict[str, Any]) -> str:
+    inputs = payload.get("input-messages") or payload.get("input_messages") or []
+    if not isinstance(inputs, list) or not inputs:
+        return ""
+    latest = inputs[-1]
+    return first_line(latest) if isinstance(latest, str) else ""
+
+
+def completion_event_id(payload: dict[str, Any]) -> str:
+    turn_id = str(payload.get("turn_id", "")).strip()
+    if turn_id:
+        return f"codex-completed-{turn_id}"
+    return stable_event_id("codex-completed", canonical_json(payload))
+
+
+def build_completion_event(config: RuntimeConfig, payload: dict[str, Any]) -> dict[str, Any]:
+    turn_id = str(payload.get("turn_id", "")).strip()
+    thread_id = extract_thread_id(payload)
+    prompt = prompt_from_completion_payload(payload)
+    result_preview = first_line(str(payload.get("last_agent_message", "")).strip())
+    cwd = str(payload.get("cwd", "")).strip()
+    body = build_body(
+        f"prompt: {prompt}" if prompt and not turn_id else "",
+        f"result: {result_preview}" if result_preview else "",
+        f"cwd: {cwd}" if cwd else "",
+    )
+    metadata = {
+        "codex_status": "completed",
+        "codex_notify_type": payload.get("type", ""),
+        "cwd": cwd,
+        "turn_id": turn_id,
+        "result_preview": result_preview,
+    }
+    if not turn_id:
+        metadata["thread_id"] = thread_id
+        metadata["prompt"] = prompt
+    return {
+        "event_id": completion_event_id(payload),
+        "source": config.source,
+        "event_type": COMPLETION_EVENT_TYPE,
+        "severity": "info",
+        "summary": "Codex task completed",
+        "body": body,
+        "metadata": {key: value for key, value in metadata.items() if value not in ("", None)},
+        "tags": [COMPLETION_STATUS_TAG],
+    }
 
 
 def extract_thread_id(payload: dict[str, Any]) -> str:
